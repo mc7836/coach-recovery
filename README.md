@@ -1,6 +1,6 @@
 # Stroke Recovery Coach
 
-An AI-powered stroke recovery coaching tool for physical therapists. Log patient workouts, track exercise difficulty, and generate personalized weekly plans using Claude.
+An AI-powered stroke recovery coaching tool for patients. Log workouts, track exercise difficulty, and generate personalized weekly plans using Claude.
 
 ## Stack
 
