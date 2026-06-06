@@ -5,7 +5,9 @@
       "Bash(npx tsc *)",
       "Bash(timeout 20 npx next build)",
       "Bash(npm run *)",
-      "Bash(taskkill //PID 34040 //F)"
+      "Bash(taskkill //PID 34040 //F)",
+      "Bash(npx eslint *)",
+      "Bash(npx next *)"
     ]
   }
 }

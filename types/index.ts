@@ -25,8 +25,9 @@ export type WorkoutExercise = {
   id: string
   log_id: string
   exercise_id: string
-  completed: boolean
-  difficulty: 'easy' | 'moderate' | 'hard' | null
+  time_minutes: number | null
+  reps: number | null
+  weight: number | null
   notes: string | null
 }
 

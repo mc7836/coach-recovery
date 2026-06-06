@@ -18,8 +18,7 @@ export default async function LogWorkoutPage({
 
   if (!patient) notFound()
 
-  const exerciseIds = exercises.map((e) => e.id)
-  const boundAction = logWorkout.bind(null, id, exerciseIds)
+  const boundAction = logWorkout.bind(null, id)
 
   return (
     <div className="space-y-6">

@@ -30,8 +30,9 @@ create table workout_exercises (
   id uuid default gen_random_uuid() primary key,
   log_id uuid references workout_logs(id) on delete cascade not null,
   exercise_id uuid references exercises(id) not null,
-  completed boolean default false not null,
-  difficulty text check (difficulty in ('easy', 'moderate', 'hard')),
+  time_minutes integer,
+  reps integer,
+  weight numeric,
   notes text
 );
 

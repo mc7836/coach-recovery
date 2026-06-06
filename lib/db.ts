@@ -34,6 +34,24 @@ export async function getExercisesAvailableAsOf(date: string): Promise<Exercise[
   return data
 }
 
+export async function getExercisesDoneByPatient(patientId: string): Promise<Exercise[]> {
+  const supabase = getSupabaseClient()
+  const { data, error } = await supabase
+    .from('workout_exercises')
+    .select('exercise:exercises (*), log:workout_logs!inner (patient_id)')
+    .eq('log.patient_id', patientId)
+  if (error) throw error
+
+  const seen = new Map<string, Exercise>()
+  for (const row of (data as unknown as { exercise: Exercise | null }[])) {
+    if (row.exercise) seen.set(row.exercise.id, row.exercise)
+  }
+
+  return Array.from(seen.values()).sort(
+    (a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name)
+  )
+}
+
 export async function getRecentWorkoutLogs(
   patientId: string,
   limit = 5

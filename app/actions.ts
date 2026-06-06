@@ -4,7 +4,13 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getSupabaseClient } from '@/lib/supabase'
 import { anthropic } from '@/lib/anthropic'
-import { getPatient, getExercisesAvailableAsOf, getRecentWorkoutLogs } from '@/lib/db'
+import {
+  getPatient,
+  getExercisesAvailableAsOf,
+  getExercisesDoneByPatient,
+  getRecentWorkoutLogs,
+} from '@/lib/db'
+import type { Exercise } from '@/types'
 
 export async function addPatient(formData: FormData) {
   const name = (formData.get('name') as string).trim()
@@ -21,16 +27,26 @@ export async function addPatient(formData: FormData) {
   redirect(`/patients/${data.id}`)
 }
 
-export async function logWorkout(
-  patientId: string,
-  exerciseIds: string[],
-  formData: FormData
-) {
+type LoggedEntry = {
+  exerciseId: string | null
+  name: string
+  category: Exercise['category']
+  timeMinutes: number | null
+  reps: number | null
+  weight: number | null
+  notes: string | null
+}
+
+export async function logWorkout(patientId: string, formData: FormData) {
   const supabase = getSupabaseClient()
   const date = formData.get('date') as string
   const weeklyNotes = (formData.get('weekly_notes') as string | null)?.trim() || null
   const ratingRaw = formData.get('overall_rating') as string | null
   const overallRating = ratingRaw ? parseInt(ratingRaw) : null
+
+  const entries: LoggedEntry[] = JSON.parse(
+    (formData.get('entries') as string | null) || '[]'
+  )
 
   const { data: log, error: logError } = await supabase
     .from('workout_logs')
@@ -39,13 +55,29 @@ export async function logWorkout(
     .single()
   if (logError) throw logError
 
-  const exerciseEntries = exerciseIds.map((exerciseId) => ({
-    log_id: log.id,
-    exercise_id: exerciseId,
-    completed: formData.get(`completed_${exerciseId}`) === 'on',
-    difficulty: (formData.get(`difficulty_${exerciseId}`) as string | null) || null,
-    notes: (formData.get(`notes_${exerciseId}`) as string | null)?.trim() || null,
-  }))
+  // Resolve each entry to an exercise id, creating any brand-new exercises in
+  // the library on the fly (introduced as of the workout date).
+  const exerciseEntries = []
+  for (const entry of entries) {
+    let exerciseId = entry.exerciseId
+    if (!exerciseId) {
+      const { data: newExercise, error: exCreateError } = await supabase
+        .from('exercises')
+        .insert({ name: entry.name, category: entry.category, date_introduced: date })
+        .select()
+        .single()
+      if (exCreateError) throw exCreateError
+      exerciseId = newExercise.id
+    }
+    exerciseEntries.push({
+      log_id: log.id,
+      exercise_id: exerciseId,
+      time_minutes: entry.timeMinutes,
+      reps: entry.reps,
+      weight: entry.weight,
+      notes: entry.notes,
+    })
+  }
 
   if (exerciseEntries.length > 0) {
     const { error: exError } = await supabase
@@ -62,13 +94,18 @@ export async function generateWeeklyPlan(patientId: string) {
   const today = new Date().toISOString().split('T')[0]
   const weekStart = getMondayOfWeek(today)
 
-  const [patient, exercises, recentLogs] = await Promise.all([
+  const [patient, doneExercises, recentLogs] = await Promise.all([
     getPatient(patientId),
-    getExercisesAvailableAsOf(today),
+    getExercisesDoneByPatient(patientId),
     getRecentWorkoutLogs(patientId, 4),
   ])
 
   if (!patient) throw new Error('Patient not found')
+
+  // Build the plan from the exercises this patient has actually done. Fall back
+  // to the full library (as of today) if they haven't logged anything yet.
+  const exercises =
+    doneExercises.length > 0 ? doneExercises : await getExercisesAvailableAsOf(today)
 
   const byCategory = exercises.reduce<Record<string, typeof exercises>>((acc, ex) => {
     if (!acc[ex.category]) acc[ex.category] = []
@@ -89,10 +126,15 @@ export async function generateWeeklyPlan(patientId: string) {
       : recentLogs
           .map((log) => {
             const exLines = log.workout_exercises
-              .map(
-                (we) =>
-                  `    - ${we.exercise.name}: ${we.completed ? 'completed' : 'skipped'}${we.difficulty ? `, ${we.difficulty}` : ''}${we.notes ? `, note: ${we.notes}` : ''}`
-              )
+              .map((we) => {
+                const parts = [
+                  we.time_minutes != null ? `${we.time_minutes} min` : null,
+                  we.reps != null ? `${we.reps} reps` : null,
+                  we.weight != null ? `${we.weight} kg` : null,
+                ].filter(Boolean)
+                const detail = parts.length > 0 ? `: ${parts.join(', ')}` : ''
+                return `    - ${we.exercise.name}${detail}${we.notes ? ` — note: ${we.notes}` : ''}`
+              })
               .join('\n')
             return [
               `Date: ${log.date} | Rating: ${log.overall_rating ?? 'N/A'}/10`,
@@ -117,7 +159,7 @@ export async function generateWeeklyPlan(patientId: string) {
 PATIENT: ${patient.name}
 NOTES: ${patient.notes || 'None'}
 
-AVAILABLE EXERCISES:
+EXERCISES THIS PATIENT HAS DONE (grouped by category — build the plan from these):
 ${exerciseList}
 
 RECENT WORKOUT HISTORY (most recent first):

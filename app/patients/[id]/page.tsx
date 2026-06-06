@@ -93,7 +93,6 @@ export default async function PatientPage({
           ) : (
             <div className="space-y-4">
               {recentLogs.map((log) => {
-                const completed = log.workout_exercises.filter((we) => we.completed).length
                 const total = log.workout_exercises.length
                 return (
                   <div key={log.id} className="border-b border-slate-100 pb-4 last:border-0 last:pb-0">
@@ -101,7 +100,7 @@ export default async function PatientPage({
                       <span className="font-medium text-sm">{formatDate(log.date)}</span>
                       <div className="flex items-center gap-3">
                         <span className="text-xs text-slate-500">
-                          {completed}/{total} done
+                          {total} exercise{total !== 1 ? 's' : ''}
                         </span>
                         {log.overall_rating && (
                           <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
@@ -114,22 +113,17 @@ export default async function PatientPage({
                       <p className="text-xs text-slate-500 mt-1 line-clamp-2">{log.weekly_notes}</p>
                     )}
                     <div className="mt-2 flex flex-wrap gap-1">
-                      {log.workout_exercises
-                        .filter((we) => we.completed)
-                        .map((we) => (
-                          <span
-                            key={we.id}
-                            className={`text-xs px-2 py-0.5 rounded-full ${
-                              we.difficulty === 'hard'
-                                ? 'bg-red-50 text-red-700'
-                                : we.difficulty === 'moderate'
-                                ? 'bg-amber-50 text-amber-700'
-                                : 'bg-green-50 text-green-700'
-                            }`}
-                          >
-                            {we.exercise.name}
-                          </span>
-                        ))}
+                      {log.workout_exercises.map((we) => (
+                        <span
+                          key={we.id}
+                          className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700"
+                        >
+                          {we.exercise.name}
+                          {we.time_minutes != null && (
+                            <span className="text-slate-400"> · {we.time_minutes}m</span>
+                          )}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )
