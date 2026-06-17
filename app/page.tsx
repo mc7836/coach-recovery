@@ -8,6 +8,21 @@ export default async function HomePage() {
   const patients = await getPatients()
   return (
     <div className="space-y-8">
+      <div className="rounded-xl bg-blue-50 border border-blue-200 px-5 py-4 text-sm text-blue-900 leading-relaxed">
+        <p className="font-semibold mb-1">Work in progress</p>
+        <p>
+          This app is in active development. The exercise-matching algorithm is currently being reviewed
+          with physical therapists for clinical accuracy, and a library of short instructional videos
+          for each exercise is coming soon. Feedback and suggestions are welcome —{' '}
+          <a
+            href="mailto:margaritajcf623@gmail.com"
+            className="underline hover:text-blue-700 transition-colors font-medium"
+          >
+            email margaritajcf623@gmail.com
+          </a>
+          .
+        </p>
+      </div>
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Patients</h1>
         <p className="text-slate-500 mt-1">Select a patient to view their dashboard or log a workout.</p>
