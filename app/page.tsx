@@ -14,12 +14,9 @@ export default async function HomePage() {
           This app is in active development. The exercise-matching algorithm is currently being reviewed
           with physical therapists for clinical accuracy, and a library of short instructional videos
           for each exercise is coming soon. Feedback and suggestions are welcome —{' '}
-          <a
-            href="mailto:margaritajcf623@gmail.com"
-            className="underline hover:text-blue-700 transition-colors font-medium"
-          >
-            email margaritajcf623@gmail.com
-          </a>
+          <Link href="/feedback" className="underline hover:text-blue-700 transition-colors font-medium">
+            share your thoughts here
+          </Link>
           .
         </p>
       </div>

@@ -54,12 +54,20 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 Learn more
               </Link>
             </p>
-            <Link
-              href="/disclaimer"
-              className="text-xs font-medium text-slate-500 hover:text-blue-600 transition-colors shrink-0"
-            >
-              Disclaimer
-            </Link>
+            <div className="flex items-center gap-4 shrink-0">
+              <Link
+                href="/feedback"
+                className="text-xs font-medium text-slate-500 hover:text-blue-600 transition-colors"
+              >
+                Feedback
+              </Link>
+              <Link
+                href="/disclaimer"
+                className="text-xs font-medium text-slate-500 hover:text-blue-600 transition-colors"
+              >
+                Disclaimer
+              </Link>
+            </div>
           </div>
         </footer>
       </body>
