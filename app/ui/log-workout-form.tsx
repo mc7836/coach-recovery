@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from 'react'
 import type { Exercise } from '@/types'
+import ExerciseSource from '@/app/ui/exercise-source'
 
 type Props = {
   exercises: Exercise[]
@@ -14,6 +15,8 @@ type Entry = {
   exerciseId: string | null // null => new exercise to be created on submit
   name: string
   category: Exercise['category']
+  source: Exercise['source'] | null // source of an existing exercise; null when new
+  dateIntroduced: string | null
   timeMinutes: string
   reps: string
   weight: string
@@ -61,6 +64,8 @@ export default function LogWorkoutForm({ exercises, action, defaultDate }: Props
         exerciseId: ex.id,
         name: ex.name,
         category: ex.category,
+        source: ex.source,
+        dateIntroduced: ex.date_introduced,
         timeMinutes: '',
         reps: '',
         weight: '',
@@ -78,6 +83,8 @@ export default function LogWorkoutForm({ exercises, action, defaultDate }: Props
         exerciseId: null,
         name,
         category: 'legs',
+        source: null,
+        dateIntroduced: null,
         timeMinutes: '',
         reps: '',
         weight: '',
@@ -199,10 +206,13 @@ export default function LogWorkoutForm({ exercises, action, defaultDate }: Props
                     key={ex.id}
                     type="button"
                     onClick={() => addExisting(ex)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center justify-between"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center justify-between gap-2"
                   >
-                    <span className="text-slate-800">{ex.name}</span>
-                    <span className="text-xs text-slate-400">{CATEGORY_LABELS[ex.category]}</span>
+                    <span className="flex flex-col">
+                      <span className="text-slate-800">{ex.name}</span>
+                      <ExerciseSource source={ex.source} date={ex.date_introduced} />
+                    </span>
+                    <span className="text-xs text-slate-400 shrink-0">{CATEGORY_LABELS[ex.category]}</span>
                   </button>
                 ))}
                 {!exactMatch && (
@@ -233,16 +243,25 @@ export default function LogWorkoutForm({ exercises, action, defaultDate }: Props
                 className="border border-slate-200 rounded-lg p-4 bg-slate-50/50"
               >
                 <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-sm text-slate-900">{entry.name}</span>
-                    {entry.exerciseId === null ? (
-                      <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-                        New
-                      </span>
-                    ) : (
-                      <span className="text-xs text-slate-400">
-                        {CATEGORY_LABELS[entry.category]}
-                      </span>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm text-slate-900">{entry.name}</span>
+                      {entry.exerciseId === null ? (
+                        <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                          New
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">
+                          {CATEGORY_LABELS[entry.category]}
+                        </span>
+                      )}
+                    </div>
+                    {entry.exerciseId !== null && entry.source && (
+                      <ExerciseSource
+                        source={entry.source}
+                        date={entry.dateIntroduced}
+                        className="mt-0.5 block"
+                      />
                     )}
                   </div>
                   <button
@@ -370,9 +389,15 @@ export default function LogWorkoutForm({ exercises, action, defaultDate }: Props
         <button
           type="submit"
           disabled={isPending}
-          className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {isPending ? 'Saving...' : 'Submit Workout Log'}
+          {isPending && (
+            <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          )}
+          {isPending ? 'Saving…' : 'Submit Workout Log'}
         </button>
       </div>
     </form>

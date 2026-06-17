@@ -2,29 +2,106 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { getSupabaseClient } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase/server'
 import { anthropic } from '@/lib/anthropic'
 import {
   getPatient,
   getExercisesAvailableAsOf,
   getExercisesDoneByPatient,
   getRecentWorkoutLogs,
+  getExerciseSessions,
 } from '@/lib/db'
-import type { Exercise } from '@/types'
+import {
+  matchExercisesForPatient,
+  computeProgression,
+  buildMatchedWeek,
+} from '@/lib/matching'
+import type {
+  Exercise,
+  AffectedSide,
+  RecoveryStage,
+  FunctionalLevel,
+  PrimaryGoal,
+} from '@/types'
+
+// Server Actions are public POST endpoints, so each one must verify the user —
+// the proxy's matcher can't be relied on to cover them (see AGENTS proxy docs).
+// RLS is the real guard at the data layer; this gives a clean redirect on top.
+async function requireUser(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+  return user
+}
+
+const PRIMARY_GOALS: PrimaryGoal[] = [
+  'strength',
+  'balance',
+  'mobility',
+  'endurance',
+  'coordination',
+]
+
+// Pulls the matching-algorithm profile fields out of an add/edit form. Returns
+// nulls for blank selects so the DB check constraints stay happy. motor_stage
+// (Brunnstrom 1-7) is optional and only present once the roadmap UI is in play.
+function parsePatientProfile(formData: FormData) {
+  const str = (key: string) => {
+    const v = (formData.get(key) as string | null)?.trim()
+    return v ? v : null
+  }
+  const motorStageRaw = str('motor_stage')
+  const motorStage = motorStageRaw ? parseInt(motorStageRaw, 10) : null
+
+  const goals = (formData.getAll('primary_goals') as string[]).filter((g) =>
+    PRIMARY_GOALS.includes(g as PrimaryGoal)
+  ) as PrimaryGoal[]
+
+  return {
+    notes: str('notes'),
+    affected_side: str('affected_side') as AffectedSide | null,
+    recovery_stage: str('recovery_stage') as RecoveryStage | null,
+    functional_level: str('functional_level') as FunctionalLevel | null,
+    primary_goals: goals,
+    motor_stage:
+      motorStage && motorStage >= 1 && motorStage <= 7 ? motorStage : null,
+  }
+}
 
 export async function addPatient(formData: FormData) {
   const name = (formData.get('name') as string).trim()
-  const notes = (formData.get('notes') as string | null)?.trim() || null
+  const profile = parsePatientProfile(formData)
 
-  const supabase = getSupabaseClient()
+  const supabase = await createClient()
+  const user = await requireUser(supabase)
+
   const { data, error } = await supabase
     .from('patients')
-    .insert({ name, notes })
+    .insert({ name, ...profile, user_id: user.id })
     .select()
     .single()
   if (error) throw error
 
   redirect(`/patients/${data.id}`)
+}
+
+export async function updatePatient(patientId: string, formData: FormData) {
+  const name = (formData.get('name') as string).trim()
+  const profile = parsePatientProfile(formData)
+
+  const supabase = await createClient()
+  await requireUser(supabase)
+
+  // RLS guarantees a user can only update their own patient row.
+  const { error } = await supabase
+    .from('patients')
+    .update({ name, ...profile })
+    .eq('id', patientId)
+  if (error) throw error
+
+  revalidatePath(`/patients/${patientId}`)
+  redirect(`/patients/${patientId}`)
 }
 
 type LoggedEntry = {
@@ -38,7 +115,8 @@ type LoggedEntry = {
 }
 
 export async function logWorkout(patientId: string, formData: FormData) {
-  const supabase = getSupabaseClient()
+  const supabase = await createClient()
+  await requireUser(supabase)
   const date = formData.get('date') as string
   const weeklyNotes = (formData.get('weekly_notes') as string | null)?.trim() || null
   const ratingRaw = formData.get('overall_rating') as string | null
@@ -63,7 +141,12 @@ export async function logWorkout(patientId: string, formData: FormData) {
     if (!exerciseId) {
       const { data: newExercise, error: exCreateError } = await supabase
         .from('exercises')
-        .insert({ name: entry.name, category: entry.category, date_introduced: date })
+        .insert({
+          name: entry.name,
+          category: entry.category,
+          date_introduced: date,
+          source: 'self_logged',
+        })
         .select()
         .single()
       if (exCreateError) throw exCreateError
@@ -91,6 +174,7 @@ export async function logWorkout(patientId: string, formData: FormData) {
 }
 
 export async function generateWeeklyPlan(patientId: string) {
+  await requireUser(await createClient())
   const today = new Date().toISOString().split('T')[0]
   const weekStart = getMondayOfWeek(today)
 
@@ -218,12 +302,58 @@ Your clinical reasoning here, explaining exercise choices, progressions, and any
   const plan = JSON.parse(planRaw)
   const aiReasoning = reasoningMatch ? reasoningMatch[1].trim() : null
 
-  const supabase = getSupabaseClient()
+  const supabase = await createClient()
   const { error } = await supabase.from('weekly_plans').insert({
     patient_id: patientId,
     week_start: weekStart,
     plan,
     ai_reasoning: aiReasoning,
+  })
+  if (error) throw error
+
+  revalidatePath(`/patients/${patientId}/plan`)
+  redirect(`/patients/${patientId}/plan`)
+}
+
+// Token-free alternative to generateWeeklyPlan: builds a weekly plan purely from
+// the matching algorithm + auto-progression. Zero API calls.
+export async function generateMatchedPlan(patientId: string) {
+  const supabase = await createClient()
+  await requireUser(supabase)
+
+  const patient = await getPatient(patientId)
+  if (!patient) throw new Error('Patient not found')
+
+  const today = new Date().toISOString().split('T')[0]
+  const weekStart = getMondayOfWeek(today)
+
+  const match = await matchExercisesForPatient(patient)
+  const progression = computeProgression(await getExerciseSessions(patientId))
+
+  const plan = buildMatchedWeek(match, patient)
+  plan.progression_notes = progression.length
+    ? progression.map((p) => p.rationale).join(' ')
+    : 'Not enough logged history yet to recommend progression — keep logging sessions.'
+
+  const reasoning = [
+    'Algorithm-matched plan (no AI). Exercises were filtered to stroke-recovery ' +
+      `exercises in positions [${match.appliedFilters.positions.join(', ')}] and ` +
+      `difficulty [${match.appliedFilters.difficulties.join(', ')}], then ranked by ` +
+      'overlap with the patient’s primary goals' +
+      (patient.primary_goals?.length ? ` (${patient.primary_goals.join(', ')})` : '') +
+      '.',
+    progression.length
+      ? `Progression: ${progression.map((p) => p.rationale).join(' ')}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+
+  const { error } = await supabase.from('weekly_plans').insert({
+    patient_id: patientId,
+    week_start: weekStart,
+    plan,
+    ai_reasoning: reasoning,
   })
   if (error) throw error
 
@@ -237,4 +367,16 @@ function getMondayOfWeek(dateStr: string): string {
   const diff = day === 0 ? -6 : 1 - day
   date.setUTCDate(date.getUTCDate() + diff)
   return date.toISOString().split('T')[0]
+}
+
+export async function deletePatient(patientId: string) {
+  const supabase = await createClient()
+  await requireUser(supabase)
+  const { error } = await supabase
+    .from('patients')
+    .delete()
+    .eq('id', patientId)
+  if (error) throw error
+
+  revalidatePath('/')
 }

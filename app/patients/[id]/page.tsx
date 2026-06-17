@@ -1,7 +1,14 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getPatient, getRecentWorkoutLogs, getLatestWeeklyPlan } from '@/lib/db'
-import GeneratePlanButton from '@/app/ui/generate-plan-button'
+import {
+  getPatient,
+  getRecentWorkoutLogs,
+  getLatestWeeklyPlan,
+  getRoadmapForStage,
+} from '@/lib/db'
+import { motorStageInfo } from '@/lib/recovery'
+import GenerateMatchedPlanButton from '@/app/ui/generate-matched-plan-button'
+import ExerciseSource from '@/app/ui/exercise-source'
 
 export default async function PatientPage({
   params,
@@ -16,6 +23,11 @@ export default async function PatientPage({
   ])
 
   if (!patient) notFound()
+
+  const stageInfo = motorStageInfo(patient.motor_stage)
+  const roadmap = patient.motor_stage
+    ? await getRoadmapForStage(patient.motor_stage)
+    : null
 
   return (
     <div className="space-y-8">
@@ -32,7 +44,8 @@ export default async function PatientPage({
           >
             Log Workout
           </Link>
-          <GeneratePlanButton patientId={id} />
+          <GenerateMatchedPlanButton patientId={id} />
+          <span className="text-xs text-slate-400 self-center">AI-powered plans coming soon</span>
           {latestPlan && (
             <Link
               href={`/patients/${id}/plan`}
@@ -41,8 +54,68 @@ export default async function PatientPage({
               View Plan
             </Link>
           )}
+          <Link
+            href={`/patients/${id}/edit`}
+            className="border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-100 transition-colors"
+          >
+            Edit
+          </Link>
         </div>
       </div>
+
+      {/* Recovery Roadmap */}
+      <section className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+          <h2 className="font-semibold text-slate-900">Recovery Roadmap</h2>
+          {patient.motor_stage && (
+            <span className="text-xs font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+              Motor stage {patient.motor_stage} of 7
+            </span>
+          )}
+        </div>
+
+        {stageInfo ? (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-medium text-slate-900">{stageInfo.title}</p>
+              <p className="text-sm text-slate-600 mt-0.5">{stageInfo.description}</p>
+            </div>
+            {roadmap && (
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-1">
+                    Typical focus
+                  </p>
+                  <p className="text-sm text-slate-700">{roadmap.typical_focus}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-1">
+                    Precautions
+                  </p>
+                  <p className="text-sm text-slate-700">{roadmap.precautions}</p>
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-slate-400 border-t border-slate-100 pt-3">
+              This roadmap is for educational guidance only. Always confirm your
+              recovery stage and exercise plan with your physical therapist.
+            </p>
+          </div>
+        ) : (
+          <div className="text-sm text-slate-500">
+            <p>
+              No motor stage set yet. Add this patient&apos;s Brunnstrom motor
+              stage to see stage-specific focus and precautions.
+            </p>
+            <Link
+              href={`/patients/${id}/edit`}
+              className="inline-block mt-2 text-blue-600 hover:underline"
+            >
+              Set motor stage →
+            </Link>
+          </div>
+        )}
+      </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Latest Plan Summary */}
@@ -81,7 +154,8 @@ export default async function PatientPage({
         ) : (
           <div className="bg-white rounded-xl border border-dashed border-slate-300 p-6 flex flex-col items-center justify-center text-center gap-3">
             <p className="text-slate-500 text-sm">No weekly plan yet.</p>
-            <GeneratePlanButton patientId={id} />
+            <GenerateMatchedPlanButton patientId={id} />
+            <p className="text-xs text-slate-400">AI-powered plans coming soon</p>
           </div>
         )}
 
@@ -112,16 +186,23 @@ export default async function PatientPage({
                     {log.weekly_notes && (
                       <p className="text-xs text-slate-500 mt-1 line-clamp-2">{log.weekly_notes}</p>
                     )}
-                    <div className="mt-2 flex flex-wrap gap-1">
+                    <div className="mt-2 flex flex-wrap gap-1.5">
                       {log.workout_exercises.map((we) => (
                         <span
                           key={we.id}
-                          className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700"
+                          className="inline-flex flex-col text-xs px-2 py-1 rounded-lg bg-slate-100 text-slate-700"
                         >
-                          {we.exercise.name}
-                          {we.time_minutes != null && (
-                            <span className="text-slate-400"> · {we.time_minutes}m</span>
-                          )}
+                          <span>
+                            {we.exercise.name}
+                            {we.time_minutes != null && (
+                              <span className="text-slate-400"> · {we.time_minutes}m</span>
+                            )}
+                          </span>
+                          <ExerciseSource
+                            source={we.exercise.source}
+                            date={we.exercise.date_introduced}
+                            className="mt-0.5"
+                          />
                         </span>
                       ))}
                     </div>
